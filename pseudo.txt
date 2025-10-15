@@ -1,0 +1,389 @@
+@@ FILE: main.cpp
+procedure main(argc, argv):
+    return CLIHandler::Main(argc, argv)
+end procedure
+<separate-line>
+@@ FILE: CLIHandler.cpp
+procedure Main(argc, argv):
+    if argc == 1 or "-h" in argv or "--help" in argv:
+        Call CLIHandler::PrintHelp()
+        Exit with success
+    end if
+    verboseMode ← false
+    filteredArgs ← empty list
+    for arg in argv[1:]:
+        if arg == "-v" or arg == "--verbose":
+            verboseMode ← true
+        else:
+            append arg to filteredArgs
+        end if
+    end for
+    if length(filteredArgs) ≠ 2:
+        Call ErrorHandler::ReportUsageError()
+        Exit with error code
+    end if
+    tmFilePath ← filteredArgs[0]
+    inputString ← filteredArgs[1]
+    try:
+        turingMachine ← TMParser::Parse(tmFilePath)
+    catch error:
+        Call ErrorHandler::Report(error)
+        Exit with error code
+    end try
+    isValid ← InputValidator::Validate(inputString, turingMachine.inputAlphabet)
+    if not isValid:
+        if verboseMode:
+            Call ErrorHandler::ReportVerboseIllegalInput(inputString, turingMachine.inputAlphabet)
+        else:
+            Call ErrorHandler::ReportIllegalInput()
+        end if
+        Exit with error code
+    end if
+    if verboseMode:
+        Call VerboseTracer::SimulateAndTrace(turingMachine, inputString)
+    else:
+        finalConfig ← MachineSimulator::Simulate(turingMachine, inputString)
+        Call ResultPrinter::PrintFinalResult(finalConfig)
+    end if
+    Exit with success
+end procedure
+procedure PrintHelp():
+    print "usage: turing [-v|--verbose] [-h|--help] <tm> <input>"
+end procedure
+<separate-line>
+@@ FILE: InputValidator.cpp
+procedure Validate(inputString, inputAlphabet):
+    for i from 0 to length(inputString)-1:
+        symbol ← inputString[i]
+        if symbol not in inputAlphabet:
+            return false
+        end if
+    end for
+    return true
+end procedure
+<separate-line>
+@@ FILE: MachineSimulator.cpp
+procedure Simulate(turingMachine, inputString):
+    config ← MachineSimulator::initializeConfiguration(turingMachine, inputString)
+    step ← 0
+    while true:
+        matched ← false
+        for each transition in turingMachine.transitions:
+            if transition.oldState ≠ config.currentState:
+                continue
+            end if
+            if MachineSimulator::matchSymbols(config, transition.oldSymbols, turingMachine.blankSymbol):
+                MachineSimulator::applyTransition(config, transition, turingMachine.blankSymbol)
+                matched ← true
+                break
+            end if
+        end for
+        if not matched:
+            break
+        end if
+        step ← step + 1
+    end while
+    return config
+end procedure
+procedure initializeConfiguration(turingMachine, inputString):
+    tapes ← empty sequence
+    for i from 0 to turingMachine.tapeCount - 1:
+        tape ← new Tape
+        tape.cells ← empty map
+        if i == 0:
+            for j from 0 to length(inputString) - 1:
+                tape.cells[j] ← inputString[j]
+            end for
+        end if
+        tape.headPosition ← 0
+        append tape to tapes
+    end for
+    config ← new MachineConfiguration
+    config.currentState ← turingMachine.initialState
+    config.tapes ← tapes
+    return config
+end procedure
+procedure matchSymbols(config, oldSymbols, blankSymbol):
+    for i from 0 to length(oldSymbols) - 1:
+        headPos ← config.tapes[i].headPosition
+        symbol ← blankSymbol
+        if headPos in config.tapes[i].cells:
+            symbol ← config.tapes[i].cells[headPos]
+        end if
+        expected ← oldSymbols[i]
+        if expected == "*":
+            if symbol == blankSymbol:
+                return false
+            end if
+        else:
+            if symbol ≠ expected:
+                return false
+            end if
+        end if
+    end for
+    return true
+end procedure
+procedure applyTransition(config, transition, blankSymbol):
+    for i from 0 to length(config.tapes) - 1:
+        tape ← config.tapes[i]
+        headPos ← tape.headPosition
+        writeSymbol ← transition.newSymbols[i]
+        if writeSymbol ≠ '*':
+            tape.cells[headPos] ← writeSymbol
+        end if
+        direction ← transition.directions[i]
+        if direction == Direction.LEFT:
+            tape.headPosition ← headPos - 1
+        else if direction == Direction.RIGHT:
+            tape.headPosition ← headPos + 1
+        else:
+            tape.headPosition ← headPos
+        end if
+    end for
+    config.currentState ← transition.newState
+end procedure
+<separate-line>
+@@ FILE: TMParser.cpp
+procedure Parse(filePath):
+    Open file at filePath
+    tm ← new TuringMachine
+    tm.transitions ← empty set
+    for each line in file:
+        trimmed ← Trim(line)
+        if trimmed is empty or starts with ";":
+            continue
+        end if
+        if startsWith(trimmed, "#Q"):
+            tm.states ← TMParser::parseSet(trimmed, "state")
+        else if startsWith(trimmed, "#S"):
+            tm.inputAlphabet ← TMParser::parseSet(trimmed, "inputalphabet")
+        else if startsWith(trimmed, "#G"):
+            tm.tapeAlphabet ← TMParser::parseSet(trimmed, "tapealphabet")
+            for symbol in tm.inputAlphabet:
+                if symbol not in tm.tapeAlphabet:
+                    raise syntax error
+                end if
+            end for
+        else if startsWith(trimmed, "#q0"):
+            tm.initialState ← TMParser::parseSingle(trimmed)
+            if tm.initialState not in tm.states:
+                raise syntax error
+            end if
+        else if startsWith(trimmed, "#B"):
+            tm.blankSymbol ← TMParser::parseSingle(trimmed)
+            if tm.blankSymbol not in tm.tapeAlphabet or tm.blankSymbol != '_':
+                raise syntax error
+            end if
+        else if startsWith(trimmed, "#F"):
+            tm.finalStates ← TMParser::parseSet(trimmed, "state")
+            for state in tm.finalStates:
+                if state not in tm.states:
+                    raise syntax error
+                end if
+            end for
+        else if startsWith(trimmed, "#N"):
+            tm.tapeCount ← TMParser::parseInt(trimmed)
+        else:
+            transition ← TMParser::parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet)
+            Add transition to tm.transitions
+        end if
+    end for
+    return tm
+end procedure
+procedure parseSet(line, type):
+    parts ← Split(line, " = ")
+    if length(parts) ≠ 2:
+        raise syntax error
+    end if
+    body ← parts[1]
+    if not (startsWith(body, "{") and endsWith(body, "}")):
+        raise syntax error
+    end if
+    content ← Substring(body, 1, length(body)-2)
+    items ← Split(content, ",")
+    for item in items:
+        if item is empty:
+            raise syntax error
+        end if
+        if type == "state":
+            for c in item:
+                if c not in ['a'-'z','A'-'Z','0'-'9','_']:
+                    raise syntax error
+                end if
+            end for
+        else if type == "inputalphabet":
+            if length(item) ≠ 1 or item in [" ", ",", ";", "{", "}", "*", "_"]:
+                raise syntax error
+            end if
+        else if type == "tapealphabet":
+            if length(item) ≠ 1 or item in [" ", ",", ";", "{", "}", "*"]:
+                raise syntax error
+            end if
+        end if
+    end for
+    return Set(items)
+end procedure
+procedure parseSingle(line):
+    parts ← Split(line, " = ")
+    if length(parts) ≠ 2:
+        raise syntax error
+    end if
+    return parts[1]
+end procedure
+procedure parseInt(line):
+    value ← TMParser::parseSingle(line)
+    if not isInteger(value):
+        raise syntax error
+    end if
+    return toInteger(value)
+end procedure
+procedure parseTransition(line, tapeCount, states, symbols):
+    tokens ← Split(line, " ")
+    if length(tokens) ≠ 5:
+        raise syntax error
+    end if
+    oldState ← tokens[0]
+    readSymbols ← tokens[1]
+    writeSymbols ← tokens[2]
+    directions ← tokens[3]
+    newState ← tokens[4]
+    if length(readSymbols) ≠ tapeCount or length(writeSymbols) ≠ tapeCount or length(directions) ≠ tapeCount:
+        raise syntax error
+    end if
+    if oldState not in states or newState not in states:
+        raise syntax error
+    end if
+    for i from 0 to tapeCount - 1:
+        r ← readSymbols[i]
+        w ← writeSymbols[i]
+        d ← directions[i]
+        if r ≠ '*' and r not in symbols:
+            raise syntax error
+        end if
+        if w ≠ '*' and w not in symbols:
+            raise syntax error
+        end if
+        if d not in ['l','r','*']:
+            raise syntax error
+        end if
+    end for
+    return new Transition(oldState, readSymbols, writeSymbols, directions, newState)
+end procedure
+<separate-line>
+@@ FILE: VerboseTracer.cpp
+procedure SimulateAndTrace(turingMachine, inputString):
+    Call ResultPrinter::PrintVerboseStart(inputString)
+    config ← MachineSimulator::initializeConfiguration(turingMachine, inputString)
+    step ← 0
+    while true:
+        Call ResultPrinter::PrintVerboseStep(step, config)
+        matched ← false
+        for each transition in turingMachine.transitions:
+            if transition.oldState ≠ config.currentState:
+                continue
+            end if
+            if MachineSimulator::matchSymbols(config, transition.oldSymbols, turingMachine.blankSymbol):
+                MachineSimulator::applyTransition(config, transition, turingMachine.blankSymbol)
+                matched ← true
+                break
+            end if
+        end for
+        if not matched:
+            break
+        end if
+        step ← step + 1
+    end while
+    Call ResultPrinter::PrintVerboseResult(config)
+end procedure
+<separate-line>
+@@ FILE: ResultPrinter.cpp
+procedure PrintFinalResult(config):
+    tape ← config.tapes[0]
+    indices ← sorted keys of tape.cells
+    if indices is empty:
+        print ""
+        return
+    end if
+    left ← minimum of indices
+    right ← maximum of indices
+    output ← ""
+    for i from left to right:
+        symbol ← tape.cells.get(i, '_')
+        output ← output + symbol
+    end for
+    print output
+end procedure
+procedure PrintVerboseStart(inputString):
+    print "Input: " + inputString
+    print "==================== RUN ===================="
+end procedure
+procedure PrintVerboseStep(step, config):
+    print "Step   : " + step
+    print "State  : " + config.currentState
+    for i from 0 to length(config.tapes) - 1:
+        tape ← config.tapes[i]
+        head ← tape.headPosition
+        indices ← sorted keys of tape.cells ∪ {head}
+        left ← minimum of indices
+        right ← maximum of indices
+        indexLine ← "Index" + i + " :"
+        symbolLine ← "Tape" + i + "  :"
+        headLine ← "Head" + i + "  :"
+        for j from left to right:
+            indexStr ← toString(abs(j))
+            symbol ← tape.cells.get(j, '_')
+            isHead ← (j == head)
+            pad ← " " * length(indexStr)
+            indexLine ← indexLine + " " + indexStr
+            symbolLine ← symbolLine + pad + symbol
+            headLine ← headLine + (pad + "^" if isHead else pad + " ")
+        end for
+        print indexLine
+        print symbolLine
+        print headLine
+    end for
+    print "---------------------------------------------"
+end procedure
+procedure PrintVerboseResult(config):
+    tape ← config.tapes[0]
+    indices ← sorted keys of tape.cells
+    if indices is empty:
+        print "Result: "
+    else:
+        left ← minimum of indices
+        right ← maximum of indices
+        output ← ""
+        for i from left to right:
+            symbol ← tape.cells.get(i, '_')
+            output ← output + symbol
+        end for
+        print "Result: " + output
+    end if
+    print "==================== END ===================="
+end procedure
+<separate-line>
+@@ FILE: ErrorHandler.cpp
+procedure Report(error):
+    print error message to stderr
+end procedure
+procedure ReportUsageError():
+    print "usage: turing [-v|--verbose] [-h|--help] <tm> <input>" to stderr
+end procedure
+procedure ReportIllegalInput():
+    print "illegal input" to stderr
+end procedure
+procedure ReportVerboseIllegalInput(inputString, inputAlphabet):
+    print "Input: " + inputString
+    print "==================== ERR ===================="
+    for i from 0 to length(inputString) - 1:
+        if inputString[i] not in inputAlphabet:
+            print "error: '" + inputString[i] + "' was not declared in the set of input symbols"
+            print "Input: " + inputString
+            marker ← " " * i + "^"
+            print "       " + marker
+            break
+        end if
+    end for
+    print "==================== END ===================="
+end procedure
+<separate-line>
