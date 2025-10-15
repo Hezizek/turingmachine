@@ -28,8 +28,7 @@ void ResultPrinter::PrintVerboseStart(const std::string& inputString) {
     std::cout << "==================== RUN ====================" << std::endl;
 }
 
-//  此处size_t应该修改为int
-void ResultPrinter::PrintVerboseStep(std::size_t step, const MachineConfiguration& config) {
+void ResultPrinter::PrintVerboseStep(int step, const MachineConfiguration& config) {
     std::cout << "Step   : " << step << std::endl;
     std::cout << "State  : " << config.currentState << std::endl;
     for (std::size_t i = 0; i < config.tapes.size(); ++i) {

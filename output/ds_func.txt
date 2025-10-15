@@ -1,0 +1,520 @@
+int main(int argc, char* argv[]) {
+    return CLIHandler::Main(argc, argv);
+}
+int CLIHandler::Main(int argc, char* argv[]) {
+    if (argc == 1 || std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help") {
+        CLIHandler::PrintHelp();
+        return 0;
+    }
+    
+    bool verboseMode = false;
+    std::vector<std::string> filteredArgs;
+    
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "-v" || arg == "--verbose") {
+            verboseMode = true;
+        } else {
+            filteredArgs.push_back(arg);
+        }
+    }
+    
+    if (filteredArgs.size() != 2) {
+        ErrorHandler::ReportUsageError();
+        return 1;
+    }
+    
+    std::string tmFilePath = filteredArgs[0];
+    std::string inputString = filteredArgs[1];
+    
+    TuringMachine turingMachine;
+    try {
+        turingMachine = TMParser::Parse(tmFilePath);
+    } catch (const std::exception& error) {
+        ErrorHandler::Report(error.what());
+        return 1;
+    }
+    
+    bool isValid = InputValidator::Validate(inputString, turingMachine.inputAlphabet);
+    if (!isValid) {
+        if (verboseMode) {
+            ErrorHandler::ReportVerboseIllegalInput(inputString, turingMachine.inputAlphabet);
+        } else {
+            ErrorHandler::ReportIllegalInput();
+        }
+        return 1;
+    }
+    
+    if (verboseMode) {
+        VerboseTracer::SimulateAndTrace(turingMachine, inputString);
+    } else {
+        MachineConfiguration finalConfig = MachineSimulator::Simulate(turingMachine, inputString);
+        ResultPrinter::PrintFinalResult(finalConfig);
+    }
+    
+    return 0;
+}
+void CLIHandler::PrintHelp() {
+    std::cout << "usage: turing [-v|--verbose] [-h|--help] <tm> <input>" << std::endl;
+}
+bool InputValidator::Validate(const std::string& inputString, const std::set<char>& inputAlphabet) {
+    for (size_t i = 0; i < inputString.length(); i++) {
+        char symbol = inputString[i];
+        if (inputAlphabet.find(symbol) == inputAlphabet.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+MachineConfiguration MachineSimulator::Simulate(const TuringMachine& turingMachine, const std::string& inputString) {
+    MachineConfiguration config = MachineSimulator::initializeConfiguration(turingMachine, inputString);
+    int step = 0;
+    
+    while (true) {
+        bool matched = false;
+        for (const auto& transition : turingMachine.transitions) {
+            if (transition.oldState != config.currentState) {
+                continue;
+            }
+            if (MachineSimulator::matchSymbols(config, transition.oldSymbols, turingMachine.blankSymbol)) {
+                MachineSimulator::applyTransition(config, transition, turingMachine.blankSymbol);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            break;
+        }
+        step = step + 1;
+    }
+    
+    return config;
+}
+MachineConfiguration MachineSimulator::initializeConfiguration(const TuringMachine& turingMachine, const std::string& inputString) {
+    std::vector<Tape> tapes;
+    
+    for (int i = 0; i < turingMachine.tapeCount; i++) {
+        Tape tape;
+        tape.cells = std::map<int, char>();
+        
+        if (i == 0) {
+            for (size_t j = 0; j < inputString.length(); j++) {
+                tape.cells[j] = inputString[j];
+            }
+        }
+        
+        tape.headPosition = 0;
+        tapes.push_back(tape);
+    }
+    
+    MachineConfiguration config;
+    config.currentState = turingMachine.initialState;
+    config.tapes = tapes;
+    
+    return config;
+}
+bool MachineSimulator::matchSymbols(const MachineConfiguration& config, const std::vector<char>& oldSymbols, char blankSymbol) {
+    for (size_t i = 0; i < oldSymbols.size(); i++) {
+        int headPos = config.tapes[i].headPosition;
+        char symbol = blankSymbol;
+        if (config.tapes[i].cells.find(headPos) != config.tapes[i].cells.end()) {
+            symbol = config.tapes[i].cells.at(headPos);
+        }
+        
+        char expected = oldSymbols[i];
+        if (expected == '*') {
+            if (symbol == blankSymbol) {
+                return false;
+            }
+        } else {
+            if (symbol != expected) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+void MachineSimulator::applyTransition(MachineConfiguration& config, const Transition& transition, char blankSymbol) {
+    for (size_t i = 0; i < config.tapes.size(); i++) {
+        Tape& tape = config.tapes[i];
+        int headPos = tape.headPosition;
+        char writeSymbol = transition.newSymbols[i];
+        
+        if (writeSymbol != '*') {
+            tape.cells[headPos] = writeSymbol;
+        }
+        
+        Direction direction = transition.directions[i];
+        if (direction == Direction::LEFT) {
+            tape.headPosition = headPos - 1;
+        } else if (direction == Direction::RIGHT) {
+            tape.headPosition = headPos + 1;
+        } else {
+            tape.headPosition = headPos;
+        }
+    }
+    
+    config.currentState = transition.newState;
+}
+TuringMachine TMParser::Parse(const std::string& filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file: " + filePath);
+    }
+    
+    TuringMachine tm;
+    tm.transitions = std::vector<Transition>();
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        std::string trimmed = line;
+        trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+        trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+        
+        if (trimmed.empty() || trimmed[0] == ';') {
+            continue;
+        }
+        
+        if (trimmed.find("#Q") == 0) {
+            tm.states = TMParser::parseSet(trimmed, "state");
+        } else if (trimmed.find("#S") == 0) {
+            tm.inputAlphabet = TMParser::parseSet(trimmed, "inputalphabet");
+        } else if (trimmed.find("#G") == 0) {
+            tm.tapeAlphabet = TMParser::parseSet(trimmed, "tapealphabet");
+            for (char symbol : tm.inputAlphabet) {
+                if (tm.tapeAlphabet.find(symbol) == tm.tapeAlphabet.end()) {
+                    throw std::runtime_error("Input alphabet symbol not in tape alphabet");
+                }
+            }
+        } else if (trimmed.find("#q0") == 0) {
+            tm.initialState = TMParser::parseSingle(trimmed);
+            if (tm.states.find(tm.initialState) == tm.states.end()) {
+                throw std::runtime_error("Initial state not in states set");
+            }
+        } else if (trimmed.find("#B") == 0) {
+            std::string blankStr = TMParser::parseSingle(trimmed);
+            if (blankStr.length() != 1) {
+                throw std::runtime_error("Blank symbol must be a single character");
+            }
+            tm.blankSymbol = blankStr[0];
+            if (tm.tapeAlphabet.find(tm.blankSymbol) == tm.tapeAlphabet.end() || tm.blankSymbol != '_') {
+                throw std::runtime_error("Blank symbol must be '_' and in tape alphabet");
+            }
+        } else if (trimmed.find("#F") == 0) {
+            tm.finalStates = TMParser::parseSet(trimmed, "state");
+            for (const std::string& state : tm.finalStates) {
+                if (tm.states.find(state) == tm.states.end()) {
+                    throw std::runtime_error("Final state not in states set");
+                }
+            }
+        } else if (trimmed.find("#N") == 0) {
+            tm.tapeCount = TMParser::parseInt(trimmed);
+        } else {
+            Transition transition = TMParser::parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet);
+            tm.transitions.push_back(transition);
+        }
+    }
+    
+    return tm;
+}
+std::set<std::string> TMParser::parseSet(const std::string& line, const std::string& type) {
+    size_t equalPos = line.find('=');
+    if (equalPos == std::string::npos) {
+        throw std::runtime_error("Syntax error: missing '=' in set definition");
+    }
+    
+    std::string body = line.substr(equalPos + 1);
+    body.erase(0, body.find_first_not_of(" \t"));
+    body.erase(body.find_last_not_of(" \t") + 1);
+    
+    if (body.empty() || body[0] != '{' || body[body.length() - 1] != '}') {
+        throw std::runtime_error("Syntax error: set must be enclosed in braces");
+    }
+    
+    std::string content = body.substr(1, body.length() - 2);
+    std::set<std::string> items;
+    std::stringstream ss(content);
+    std::string item;
+    
+    while (std::getline(ss, item, ',')) {
+        item.erase(0, item.find_first_not_of(" \t"));
+        item.erase(item.find_last_not_of(" \t") + 1);
+        
+        if (item.empty()) {
+            throw std::runtime_error("Syntax error: empty item in set");
+        }
+        
+        if (type == "state") {
+            for (char c : item) {
+                if (!std::isalnum(c) && c != '_') {
+                    throw std::runtime_error("Syntax error: invalid character in state name");
+                }
+            }
+        } else if (type == "inputalphabet") {
+            if (item.length() != 1 || item == " " || item == "," || item == ";" || 
+                item == "{" || item == "}" || item == "*" || item == "_") {
+                throw std::runtime_error("Syntax error: invalid input alphabet symbol");
+            }
+        } else if (type == "tapealphabet") {
+            if (item.length() != 1 || item == " " || item == "," || item == ";" || 
+                item == "{" || item == "}" || item == "*") {
+                throw std::runtime_error("Syntax error: invalid tape alphabet symbol");
+            }
+        }
+        
+        items.insert(item);
+    }
+    
+    return items;
+}
+std::string TMParser::parseSingle(const std::string& line) {
+    size_t equalPos = line.find('=');
+    if (equalPos == std::string::npos) {
+        throw std::runtime_error("Syntax error: missing '=' in single value definition");
+    }
+    
+    std::string value = line.substr(equalPos + 1);
+    value.erase(0, value.find_first_not_of(" \t"));
+    value.erase(value.find_last_not_of(" \t") + 1);
+    
+    return value;
+}
+int TMParser::parseInt(const std::string& line) {
+    std::string value = TMParser::parseSingle(line);
+    
+    if (value.empty() || !std::all_of(value.begin(), value.end(), ::isdigit)) {
+        throw std::runtime_error("Syntax error: expected integer value");
+    }
+    
+    return std::stoi(value);
+}
+Transition TMParser::parseTransition(const std::string& line, int tapeCount, const std::set<std::string>& states, const std::set<char>& symbols) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(line);
+    std::string token;
+    
+    while (ss >> token) {
+        tokens.push_back(token);
+    }
+    
+    if (tokens.size() != 5) {
+        throw std::runtime_error("Syntax error: transition must have exactly 5 tokens");
+    }
+    
+    std::string oldState = tokens[0];
+    std::string readSymbols = tokens[1];
+    std::string writeSymbols = tokens[2];
+    std::string directions = tokens[3];
+    std::string newState = tokens[4];
+    
+    if (readSymbols.length() != tapeCount || writeSymbols.length() != tapeCount || directions.length() != tapeCount) {
+        throw std::runtime_error("Syntax error: symbol/direction count must match tape count");
+    }
+    
+    if (states.find(oldState) == states.end() || states.find(newState) == states.end()) {
+        throw std::runtime_error("Syntax error: state not defined");
+    }
+    
+    for (int i = 0; i < tapeCount; i++) {
+        char r = readSymbols[i];
+        char w = writeSymbols[i];
+        char d = directions[i];
+        
+        if (r != '*' && symbols.find(r) == symbols.end()) {
+            throw std::runtime_error("Syntax error: read symbol not in tape alphabet");
+        }
+        
+        if (w != '*' && symbols.find(w) == symbols.end()) {
+            throw std::runtime_error("Syntax error: write symbol not in tape alphabet");
+        }
+        
+        if (d != 'l' && d != 'r' && d != '*') {
+            throw std::runtime_error("Syntax error: invalid direction");
+        }
+    }
+    
+    Transition transition;
+    transition.oldState = oldState;
+    
+    for (char c : readSymbols) {
+        transition.oldSymbols.push_back(c);
+    }
+    
+    for (char c : writeSymbols) {
+        transition.newSymbols.push_back(c);
+    }
+    
+    for (char c : directions) {
+        if (c == 'l') {
+            transition.directions.push_back(Direction::LEFT);
+        } else if (c == 'r') {
+            transition.directions.push_back(Direction::RIGHT);
+        } else {
+            transition.directions.push_back(Direction::STAY);
+        }
+    }
+    
+    transition.newState = newState;
+    
+    return transition;
+}
+void VerboseTracer::SimulateAndTrace(const TuringMachine& turingMachine, const std::string& inputString) {
+    ResultPrinter::PrintVerboseStart(inputString);
+    MachineConfiguration config = MachineSimulator::initializeConfiguration(turingMachine, inputString);
+    int step = 0;
+    
+    while (true) {
+        ResultPrinter::PrintVerboseStep(step, config);
+        bool matched = false;
+        
+        for (const auto& transition : turingMachine.transitions) {
+            if (transition.oldState != config.currentState) {
+                continue;
+            }
+            if (MachineSimulator::matchSymbols(config, transition.oldSymbols, turingMachine.blankSymbol)) {
+                MachineSimulator::applyTransition(config, transition, turingMachine.blankSymbol);
+                matched = true;
+                break;
+            }
+        }
+        
+        if (!matched) {
+            break;
+        }
+        step = step + 1;
+    }
+    
+    ResultPrinter::PrintVerboseResult(config);
+}
+void ResultPrinter::PrintFinalResult(const MachineConfiguration& config) {
+    const Tape& tape = config.tapes[0];
+    
+    if (tape.cells.empty()) {
+        std::cout << "" << std::endl;
+        return;
+    }
+    
+    int left = std::numeric_limits<int>::max();
+    int right = std::numeric_limits<int>::min();
+    
+    for (const auto& pair : tape.cells) {
+        if (pair.first < left) left = pair.first;
+        if (pair.first > right) right = pair.first;
+    }
+    
+    std::string output;
+    for (int i = left; i <= right; i++) {
+        auto it = tape.cells.find(i);
+        char symbol = (it != tape.cells.end()) ? it->second : '_';
+        output += symbol;
+    }
+    
+    std::cout << output << std::endl;
+}
+void ResultPrinter::PrintVerboseStart(const std::string& inputString) {
+    std::cout << "Input: " << inputString << std::endl;
+    std::cout << "==================== RUN ====================" << std::endl;
+}
+void ResultPrinter::PrintVerboseStep(int step, const MachineConfiguration& config) {
+    std::cout << "Step   : " << step << std::endl;
+    std::cout << "State  : " << config.currentState << std::endl;
+    
+    for (size_t i = 0; i < config.tapes.size(); i++) {
+        const Tape& tape = config.tapes[i];
+        int head = tape.headPosition;
+        
+        std::set<int> indices;
+        for (const auto& pair : tape.cells) {
+            indices.insert(pair.first);
+        }
+        indices.insert(head);
+        
+        if (indices.empty()) {
+            continue;
+        }
+        
+        int left = *indices.begin();
+        int right = *indices.rbegin();
+        
+        std::string indexLine = "Index" + std::to_string(i) + " :";
+        std::string symbolLine = "Tape" + std::to_string(i) + "  :";
+        std::string headLine = "Head" + std::to_string(i) + "  :";
+        
+        for (int j = left; j <= right; j++) {
+            std::string indexStr = std::to_string(std::abs(j));
+            char symbol = '_';
+            auto it = tape.cells.find(j);
+            if (it != tape.cells.end()) {
+                symbol = it->second;
+            }
+            
+            bool isHead = (j == head);
+            std::string pad(indexStr.length(), ' ');
+            
+            indexLine += " " + indexStr;
+            symbolLine += pad + symbol;
+            headLine += pad + (isHead ? "^" : " ");
+        }
+        
+        std::cout << indexLine << std::endl;
+        std::cout << symbolLine << std::endl;
+        std::cout << headLine << std::endl;
+    }
+    
+    std::cout << "---------------------------------------------" << std::endl;
+}
+void ResultPrinter::PrintVerboseResult(const MachineConfiguration& config) {
+    const Tape& tape = config.tapes[0];
+    
+    if (tape.cells.empty()) {
+        std::cout << "Result: " << std::endl;
+    } else {
+        int left = std::numeric_limits<int>::max();
+        int right = std::numeric_limits<int>::min();
+        
+        for (const auto& pair : tape.cells) {
+            if (pair.first < left) left = pair.first;
+            if (pair.first > right) right = pair.first;
+        }
+        
+        std::string output;
+        for (int i = left; i <= right; i++) {
+            auto it = tape.cells.find(i);
+            char symbol = (it != tape.cells.end()) ? it->second : '_';
+            output += symbol;
+        }
+        
+        std::cout << "Result: " << output << std::endl;
+    }
+    
+    std::cout << "==================== END ====================" << std::endl;
+}
+void ErrorHandler::Report(const std::string& errorMessage) {
+    std::cerr << errorMessage << std::endl;
+}
+void ErrorHandler::ReportUsageError() {
+    std::cerr << "usage: turing [-v|--verbose] [-h|--help] <tm> <input>" << std::endl;
+}
+void ErrorHandler::ReportIllegalInput() {
+    std::cerr << "illegal input" << std::endl;
+}
+void ErrorHandler::ReportVerboseIllegalInput(const std::string& inputString, const std::set<char>& inputAlphabet) {
+    std::cerr << "Input: " << inputString << std::endl;
+    std::cerr << "==================== ERR ====================" << std::endl;
+    
+    for (size_t i = 0; i < inputString.length(); i++) {
+        if (inputAlphabet.find(inputString[i]) == inputAlphabet.end()) {
+            std::cerr << "error: '" << inputString[i] << "' was not declared in the set of input symbols" << std::endl;
+            std::cerr << "Input: " << inputString << std::endl;
+            std::string marker(i, ' ');
+            marker += "^";
+            std::cerr << "       " << marker << std::endl;
+            break;
+        }
+    }
+    
+    std::cerr << "==================== END ====================" << std::endl;
+}
+
+The total prompt token usage is:  135757
+The total completion token usage is:  4585
