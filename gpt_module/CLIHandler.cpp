@@ -10,15 +10,15 @@
 #include <string>
 
 int CLIHandler::Main(int argc, char* argv[]) {
-    bool hasHelpFlag = false;
+    bool helpRequested = false;
     for (int i = 1; i < argc; ++i) {
-        std::string arg(argv[i]);
+        std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") {
-            hasHelpFlag = true;
+            helpRequested = true;
             break;
         }
     }
-    if (argc == 1 || hasHelpFlag) {
+    if (argc == 1 || helpRequested) {
         CLIHandler::PrintHelp();
         return 0;
     }
@@ -26,7 +26,7 @@ int CLIHandler::Main(int argc, char* argv[]) {
     bool verboseMode = false;
     std::vector<std::string> filteredArgs;
     for (int i = 1; i < argc; ++i) {
-        std::string arg(argv[i]);
+        std::string arg = argv[i];
         if (arg == "-v" || arg == "--verbose") {
             verboseMode = true;
         } else {
@@ -46,7 +46,10 @@ int CLIHandler::Main(int argc, char* argv[]) {
     try {
         turingMachine = TMParser::Parse(tmFilePath);
     } catch (const std::exception& e) {
-        ErrorHandler::Report(std::string(e.what()));
+        ErrorHandler::Report(e.what());
+        return 1;
+    } catch (...) {
+        ErrorHandler::Report("Unknown error");
         return 1;
     }
 

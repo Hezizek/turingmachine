@@ -1,22 +1,21 @@
 #include "VerboseTracer.h"
 #include "ResultPrinter.h"
-//  缺少了底下这个头文件
-//  #include "MachineSimulator.h"
+#include "MachineSimulator.h"
 #include <iostream>
 
-void VerboseTracer::SimulateAndTrace(const TuringMachine& turingMachine, const std::string& inputString) {
-    ResultPrinter::PrintVerboseStart(inputString);
-    MachineConfiguration config = MachineSimulator::initializeConfiguration(turingMachine, inputString);
-    size_t step = 0;
+void VerboseTracer::SimulateAndTrace(const TuringMachine& tm, const std::string& input) {
+    ResultPrinter::PrintVerboseStart(input);
+    MachineConfiguration config = MachineSimulator::initializeConfiguration(tm, input);
+    int step = 0;
     while (true) {
         ResultPrinter::PrintVerboseStep(step, config);
         bool matched = false;
-        for (const auto& transition : turingMachine.transitions) {
+        for (const Transition& transition : tm.transitions) {
             if (transition.oldState != config.currentState) {
                 continue;
             }
-            if (MachineSimulator::matchSymbols(config, transition.oldSymbols, turingMachine.blankSymbol)) {
-                MachineSimulator::applyTransition(config, transition, turingMachine.blankSymbol);
+            if (MachineSimulator::matchSymbols(config, transition.oldSymbols, tm.blankSymbol)) {
+                MachineSimulator::applyTransition(config, transition, tm.blankSymbol);
                 matched = true;
                 break;
             }
@@ -24,7 +23,7 @@ void VerboseTracer::SimulateAndTrace(const TuringMachine& turingMachine, const s
         if (!matched) {
             break;
         }
-        step += 1;
+        step = step + 1;
     }
     ResultPrinter::PrintVerboseResult(config);
 }

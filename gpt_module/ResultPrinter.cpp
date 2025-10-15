@@ -14,6 +14,7 @@ void ResultPrinter::PrintFinalResult(const MachineConfiguration& config) {
     }
     int left = tape.cells.begin()->first;
     int right = tape.cells.rbegin()->first;
+
     std::string output;
     for (int i = left; i <= right; ++i) {
         auto it = tape.cells.find(i);
@@ -23,25 +24,24 @@ void ResultPrinter::PrintFinalResult(const MachineConfiguration& config) {
     std::cout << output << std::endl;
 }
 
-void ResultPrinter::PrintVerboseStart(const std::string& inputString) {
-    std::cout << "Input: " << inputString << std::endl;
+void ResultPrinter::PrintVerboseStart(const std::string& input) {
+    std::cout << "Input: " << input << std::endl;
     std::cout << "==================== RUN ====================" << std::endl;
 }
 
 void ResultPrinter::PrintVerboseStep(int step, const MachineConfiguration& config) {
     std::cout << "Step   : " << step << std::endl;
     std::cout << "State  : " << config.currentState << std::endl;
-    for (std::size_t i = 0; i < config.tapes.size(); ++i) {
+
+    for (size_t i = 0; i < config.tapes.size(); ++i) {
         const Tape& tape = config.tapes[i];
         int head = tape.headPosition;
 
-        int left, right;
-        if (tape.cells.empty()) {
-            left = head;
-            right = head;
-        } else {
-            left = std::min(head, tape.cells.begin()->first);
-            right = std::max(head, tape.cells.rbegin()->first);
+        int left = head;
+        int right = head;
+        if (!tape.cells.empty()) {
+            left = std::min(left, tape.cells.begin()->first);
+            right = std::max(right, tape.cells.rbegin()->first);
         }
 
         std::string indexLine = std::string("Index") + std::to_string(i) + " :";
@@ -49,27 +49,28 @@ void ResultPrinter::PrintVerboseStep(int step, const MachineConfiguration& confi
         std::string headLine = std::string("Head") + std::to_string(i) + "  :";
 
         for (int j = left; j <= right; ++j) {
-            int aj = (j < 0) ? -j : j;
-            std::string indexStr = std::to_string(aj);
+            int absj = j < 0 ? -j : j;
+            std::string indexStr = std::to_string(absj);
             auto it = tape.cells.find(j);
             char symbol = (it != tape.cells.end()) ? it->second : '_';
             bool isHead = (j == head);
             std::string pad(indexStr.size(), ' ');
 
-            indexLine += " ";
+            indexLine.push_back(' ');
             indexLine += indexStr;
 
             symbolLine += pad;
             symbolLine.push_back(symbol);
 
             headLine += pad;
-            headLine.push_back(isHead ? '^' : ' ');
+            headLine += (isHead ? "^" : " ");
         }
 
         std::cout << indexLine << std::endl;
         std::cout << symbolLine << std::endl;
         std::cout << headLine << std::endl;
     }
+
     std::cout << "---------------------------------------------" << std::endl;
 }
 

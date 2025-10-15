@@ -7,10 +7,9 @@
 
 namespace {
     std::string Trim(const std::string& s) {
-        auto begin = s.begin();
-        auto end = s.end();
-        while (begin != end && std::isspace(static_cast<unsigned char>(*begin))) ++begin;
-        while (begin != end && std::isspace(static_cast<unsigned char>(*(end - 1)))) --end;
+        auto begin = std::find_if_not(s.begin(), s.end(), [](unsigned char ch) { return std::isspace(ch); });
+        auto end = std::find_if_not(s.rbegin(), s.rend(), [](unsigned char ch) { return std::isspace(ch); }).base();
+        if (begin >= end) return std::string();
         return std::string(begin, end);
     }
 
@@ -19,108 +18,99 @@ namespace {
     }
 
     bool endsWith(const std::string& s, const std::string& suffix) {
-        return s.size() >= suffix.size() &&
-               std::equal(suffix.rbegin(), suffix.rend(), s.rbegin());
+        return s.size() >= suffix.size() && std::equal(s.end() - suffix.size(), s.end(), suffix.begin());
     }
 
-    std::vector<std::string> SplitExact(const std::string& s, const std::string& delim) {
+    std::vector<std::string> SplitByExact(const std::string& str, const std::string& delim) {
         std::vector<std::string> parts;
-        std::size_t pos = s.find(delim);
-        if (pos == std::string::npos) {
-            parts.push_back(s);
-        } else {
-            parts.push_back(s.substr(0, pos));
-            parts.push_back(s.substr(pos + delim.size()));
+        size_t start = 0;
+        while (true) {
+            size_t pos = str.find(delim, start);
+            if (pos == std::string::npos) {
+                parts.push_back(str.substr(start));
+                break;
+            }
+            parts.push_back(str.substr(start, pos - start));
+            start = pos + delim.size();
         }
+        for (auto& p : parts) p = Trim(p);
         return parts;
     }
 
-    std::vector<std::string> SplitByChar(const std::string& s, char delim) {
-        std::vector<std::string> parts;
-        std::string item;
-        std::stringstream ss(s);
-        while (std::getline(ss, item, delim)) {
-            parts.push_back(item);
+    std::vector<std::string> SplitByWhitespace(const std::string& str) {
+        std::vector<std::string> tokens;
+        std::istringstream iss(str);
+        std::string tok;
+        while (iss >> tok) {
+            tokens.push_back(tok);
         }
-        return parts;
+        return tokens;
     }
 
     bool isInteger(const std::string& s) {
         if (s.empty()) return false;
-        for (char c : s) {
-            if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+        return std::all_of(s.begin(), s.end(), [](unsigned char ch) { return std::isdigit(ch); });
+    }
+
+    std::set<char> toCharSet(const std::set<std::string>& items) {
+        std::set<char> chars;
+        for (const auto& it : items) {
+            if (it.size() != 1) throw std::runtime_error("syntax error");
+            chars.insert(it[0]);
         }
-        return true;
+        return chars;
     }
 }
 
 TuringMachine TMParser::Parse(const std::string& filePath) {
     std::ifstream in(filePath);
-    if (!in) {
+    if (!in.is_open()) {
         throw std::runtime_error("failed to open file");
     }
 
     TuringMachine tm;
-    tm.transitions.clear();
-
     std::string line;
     while (std::getline(in, line)) {
         std::string trimmed = Trim(line);
-        if (trimmed.empty() || startsWith(trimmed, ";")) {
+        if (trimmed.empty() || (!trimmed.empty() && trimmed[0] == ';')) {
             continue;
         }
         if (startsWith(trimmed, "#Q")) {
-            std::set<std::string> states = TMParser::parseSet(trimmed, "state");
-            tm.states = states;
+            tm.states = TMParser::parseSet(trimmed, "state");
         } else if (startsWith(trimmed, "#S")) {
             std::set<std::string> items = TMParser::parseSet(trimmed, "inputalphabet");
-            std::set<char> alpha;
-            for (const auto& it : items) {
-                if (it.size() != 1) {
-                    throw std::runtime_error("syntax error");
-                }
-                alpha.insert(it[0]);
-            }
-            tm.inputAlphabet = alpha;
+            tm.inputAlphabet = toCharSet(items);
         } else if (startsWith(trimmed, "#G")) {
             std::set<std::string> items = TMParser::parseSet(trimmed, "tapealphabet");
-            std::set<char> alpha;
-            for (const auto& it : items) {
-                if (it.size() != 1) {
-                    throw std::runtime_error("syntax error");
-                }
-                alpha.insert(it[0]);
-            }
-            tm.tapeAlphabet = alpha;
+            tm.tapeAlphabet = toCharSet(items);
             for (char symbol : tm.inputAlphabet) {
                 if (tm.tapeAlphabet.find(symbol) == tm.tapeAlphabet.end()) {
                     throw std::runtime_error("syntax error");
                 }
             }
         } else if (startsWith(trimmed, "#q0")) {
-            std::string init = TMParser::parseSingle(trimmed);
-            if (tm.states.find(init) == tm.states.end()) {
+            std::string val = TMParser::parseSingle(trimmed);
+            if (tm.states.find(val) == tm.states.end()) {
                 throw std::runtime_error("syntax error");
             }
-            tm.initialState = init;
+            tm.initialState = val;
         } else if (startsWith(trimmed, "#B")) {
-            std::string bs = TMParser::parseSingle(trimmed);
-            if (bs.size() != 1) {
+            std::string val = TMParser::parseSingle(trimmed);
+            if (val.size() != 1) {
                 throw std::runtime_error("syntax error");
             }
-            char b = bs[0];
-            if (tm.tapeAlphabet.find(b) == tm.tapeAlphabet.end() || b != '_') {
+            char c = val[0];
+            if (tm.tapeAlphabet.find(c) == tm.tapeAlphabet.end() || c != '_') {
                 throw std::runtime_error("syntax error");
             }
-            tm.blankSymbol = b;
+            tm.blankSymbol = c;
         } else if (startsWith(trimmed, "#F")) {
-            std::set<std::string> finals = TMParser::parseSet(trimmed, "state");
-            for (const auto& state : finals) {
+            tm.finalStates = TMParser::parseSet(trimmed, "state");
+            for (const auto& state : tm.finalStates) {
                 if (tm.states.find(state) == tm.states.end()) {
                     throw std::runtime_error("syntax error");
                 }
             }
-            tm.finalStates = finals;
         } else if (startsWith(trimmed, "#N")) {
             tm.tapeCount = TMParser::parseInt(trimmed);
         } else {
@@ -132,38 +122,42 @@ TuringMachine TMParser::Parse(const std::string& filePath) {
 }
 
 std::set<std::string> TMParser::parseSet(const std::string& line, const std::string& type) {
-    auto parts = SplitExact(line, " = ");
+    auto parts = SplitByExact(line, " = ");
     if (parts.size() != 2) {
         throw std::runtime_error("syntax error");
     }
-    std::string body = Trim(parts[1]);
+    const std::string& body = parts[1];
     if (!(startsWith(body, "{") && endsWith(body, "}"))) {
         throw std::runtime_error("syntax error");
     }
     std::string content = body.substr(1, body.size() - 2);
-    std::vector<std::string> items = SplitByChar(content, ',');
+    std::vector<std::string> rawItems = SplitByExact(content, ",");
     std::set<std::string> result;
-    for (auto& rawItem : items) {
-        std::string item = Trim(rawItem);
+    for (std::string item : rawItems) {
+        item = Trim(item);
         if (item.empty()) {
             throw std::runtime_error("syntax error");
         }
         if (type == "state") {
             for (char c : item) {
-                bool ok = (c >= 'a' && c <= 'z') ||
-                          (c >= 'A' && c <= 'Z') ||
-                          (c >= '0' && c <= '9') ||
-                          (c == '_');
-                if (!ok) {
+                if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
                     throw std::runtime_error("syntax error");
                 }
             }
         } else if (type == "inputalphabet") {
-            if (item.size() != 1 || item == " " || item == "," || item == ";" || item == "{" || item == "}" || item == "*" || item == "_") {
+            if (item.size() != 1) {
+                throw std::runtime_error("syntax error");
+            }
+            char c = item[0];
+            if (c == ' ' || c == ',' || c == ';' || c == '{' || c == '}' || c == '*' || c == '_') {
                 throw std::runtime_error("syntax error");
             }
         } else if (type == "tapealphabet") {
-            if (item.size() != 1 || item == " " || item == "," || item == ";" || item == "{" || item == "}" || item == "*") {
+            if (item.size() != 1) {
+                throw std::runtime_error("syntax error");
+            }
+            char c = item[0];
+            if (c == ' ' || c == ',' || c == ';' || c == '{' || c == '}' || c == '*') {
                 throw std::runtime_error("syntax error");
             }
         }
@@ -173,11 +167,11 @@ std::set<std::string> TMParser::parseSet(const std::string& line, const std::str
 }
 
 std::string TMParser::parseSingle(const std::string& line) {
-    auto parts = SplitExact(line, " = ");
+    auto parts = SplitByExact(line, " = ");
     if (parts.size() != 2) {
         throw std::runtime_error("syntax error");
     }
-    return Trim(parts[1]);
+    return parts[1];
 }
 
 int TMParser::parseInt(const std::string& line) {
@@ -188,40 +182,44 @@ int TMParser::parseInt(const std::string& line) {
     return std::stoi(value);
 }
 
-Transition TMParser::parseTransition(const std::string& line, int tapeCount, const std::set<std::string>& states, const std::set<char>& symbols) {
-    std::vector<std::string> tokens;
-    {
-        std::stringstream ss(line);
-        std::string tok;
-        while (ss >> tok) {
-            tokens.push_back(tok);
-        }
-    }
+Transition TMParser::parseTransition(
+    const std::string& line,
+    int tapeCount,
+    const std::set<std::string>& states,
+    const std::set<char>& symbols
+) {
+    std::vector<std::string> tokens = SplitByWhitespace(line);
     if (tokens.size() != 5) {
         throw std::runtime_error("syntax error");
     }
-    std::string oldState = tokens[0];
-    std::string readSymbols = tokens[1];
-    std::string writeSymbols = tokens[2];
-    std::string directions = tokens[3];
-    std::string newState = tokens[4];
+
+    const std::string& oldState = tokens[0];
+    const std::string& readSymbols = tokens[1];
+    const std::string& writeSymbols = tokens[2];
+    const std::string& directions = tokens[3];
+    const std::string& newState = tokens[4];
 
     if (static_cast<int>(readSymbols.size()) != tapeCount ||
         static_cast<int>(writeSymbols.size()) != tapeCount ||
         static_cast<int>(directions.size()) != tapeCount) {
         throw std::runtime_error("syntax error");
     }
+
     if (states.find(oldState) == states.end() || states.find(newState) == states.end()) {
         throw std::runtime_error("syntax error");
     }
 
-    std::vector<char> oldSyms;
-    std::vector<char> newSyms;
-    std::vector<Direction> dirs;
+    Transition t;
+    t.oldState = oldState;
+    t.newState = newState;
+    t.oldSymbols.reserve(tapeCount);
+    t.newSymbols.reserve(tapeCount);
+    t.directions.reserve(tapeCount);
+
     for (int i = 0; i < tapeCount; ++i) {
-        char r = readSymbols[static_cast<std::size_t>(i)];
-        char w = writeSymbols[static_cast<std::size_t>(i)];
-        char d = directions[static_cast<std::size_t>(i)];
+        char r = readSymbols[static_cast<size_t>(i)];
+        char w = writeSymbols[static_cast<size_t>(i)];
+        char d = directions[static_cast<size_t>(i)];
 
         if (r != '*' && symbols.find(r) == symbols.end()) {
             throw std::runtime_error("syntax error");
@@ -233,22 +231,16 @@ Transition TMParser::parseTransition(const std::string& line, int tapeCount, con
             throw std::runtime_error("syntax error");
         }
 
-        oldSyms.push_back(r);
-        newSyms.push_back(w);
+        t.oldSymbols.push_back(r);
+        t.newSymbols.push_back(w);
         if (d == 'l') {
-            dirs.push_back(Direction::LEFT);
+            t.directions.push_back(Direction::LEFT);
         } else if (d == 'r') {
-            dirs.push_back(Direction::RIGHT);
+            t.directions.push_back(Direction::RIGHT);
         } else {
-            dirs.push_back(Direction::STAY);
+            t.directions.push_back(Direction::STAY);
         }
     }
 
-    Transition t;
-    t.oldState = oldState;
-    t.oldSymbols = std::move(oldSyms);
-    t.newSymbols = std::move(newSyms);
-    t.directions = std::move(dirs);
-    t.newState = newState;
     return t;
 }
