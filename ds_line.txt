@@ -1,0 +1,857 @@
+#include "CLIHandler.h"
+
+int main(int argc, char* argv[]) {
+    return CLIHandler::Main(argc, argv);
+}
+int CLIHandler::Main(int argc, char* argv[]) {
+    return CLIHandler::Main(argc, argv);
+}
+#include "CLIHandler.h"
+#include "ErrorHandler.h"
+#include "TMParser.h"
+#include "InputValidator.h"
+#include "MachineSimulator.h"
+#include "VerboseTracer.h"
+#include "ResultPrinter.h"
+#include <iostream>
+#include <vector>
+#include <string>
+int CLIHandler::Main(int argc, char* argv[]) {
+    if (argc == 1 || std::find(argv, argv + argc, std::string("-h")) != argv + argc || std::find(argv, argv + argc, std::string("--help")) != argv + argc) {
+        CLIHandler::PrintHelp();
+        return 0;
+    }
+    bool verboseMode = false;
+    std::vector<std::string> filteredArgs;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
+            verboseMode = true;
+        } else {
+            filteredArgs.push_back(argv[i]);
+        }
+    }
+    if (filteredArgs.size() != 2) {
+        ErrorHandler::ReportUsageError();
+        return 1;
+    }
+    std::string tmFilePath = filteredArgs[0];
+    std::string inputString = filteredArgs[1];
+    try {
+        TuringMachine turingMachine = TMParser::Parse(tmFilePath);
+    } catch (const std::exception& error) {
+        ErrorHandler::Report(error.what());
+        return 1;
+    }
+    bool isValid = InputValidator::Validate(inputString, turingMachine.inputAlphabet);
+    if (!isValid) {
+        if (verboseMode) {
+            ErrorHandler::ReportVerboseIllegalInput(inputString, turingMachine.inputAlphabet);
+        } else {
+            ErrorHandler::ReportIllegalInput();
+        }
+        return 1;
+    }
+    if (verboseMode) {
+        VerboseTracer::SimulateAndTrace(turingMachine, inputString);
+    } else {
+        MachineConfiguration finalConfig = MachineSimulator::Simulate(turingMachine, inputString);
+        ResultPrinter::PrintFinalResult(finalConfig);
+    }
+    return 0;
+}
+void CLIHandler::PrintHelp() {
+    std::cout << "usage: turing [-v|--verbose] [-h|--help] <tm> <input>" << std::endl;
+}
+#include "InputValidator.h"
+bool InputValidator::Validate(const std::string& inputString, const std::set<char>& inputAlphabet) {
+    for (size_t i = 0; i < inputString.length(); ++i) {
+        char symbol = inputString[i];
+        if (inputAlphabet.find(symbol) == inputAlphabet.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+#include "MachineSimulator.h"
+MachineConfiguration MachineSimulator::Simulate(const TuringMachine& turingMachine, const std::string& inputString) {
+    MachineConfiguration config = MachineSimulator::initializeConfiguration(turingMachine, inputString);
+    int step = 0;
+    while (true) {
+        bool matched = false;
+        for (const auto& transition : turingMachine.transitions) {
+            if (transition.oldState != config.currentState) {
+                continue;
+            }
+            if (MachineSimulator::matchSymbols(config, transition.oldSymbols, turingMachine.blankSymbol)) {
+                MachineSimulator::applyTransition(config, transition, turingMachine.blankSymbol);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            break;
+        }
+        step++;
+    }
+    return config;
+}
+MachineConfiguration MachineSimulator::initializeConfiguration(const TuringMachine& turingMachine, const std::string& inputString) {
+    std::vector<Tape> tapes;
+    for (int i = 0; i < turingMachine.tapeCount; ++i) {
+        Tape tape;
+        tape.cells = std::map<int, char>();
+        if (i == 0) {
+            for (size_t j = 0; j < inputString.length(); ++j) {
+                tape.cells[j] = inputString[j];
+            }
+        } else {
+            tape.headPosition = 0;
+        }
+
+        tapes.push_back(tape);
+
+    }
+    }
+
+    MachineConfiguration config;
+
+    config.currentState = turingMachine.initialState;
+
+    config.tapes = tapes;
+
+    return config;
+
+}
+    MachineConfiguration config;
+    config.currentState = turingMachine.initialState;
+    config.tapes = tapes;
+    return config;
+}
+bool MachineSimulator::matchSymbols(const MachineConfiguration& config, const std::vector<char>& oldSymbols, char blankSymbol) {
+    for (size_t i = 0; i < oldSymbols.size(); ++i) {
+        int headPos = config.tapes[i].headPosition;
+        char symbol = blankSymbol;
+        if (config.tapes[i].cells.find(headPos) != config.tapes[i].cells.end()) {
+            symbol = config.tapes[i].cells.at(headPos);
+
+        }
+
+        if (symbol != oldSymbols[i]) {
+
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+}
+        char expected = oldSymbols[i];
+        if (expected == '*') {
+            if (symbol == blankSymbol) {
+                return false;
+
+            }
+
+        } else if (expected != symbol) {
+
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+}
+        } else if (expected != symbol) {
+
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+        if (symbol != expected) {
+
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+}
+}
+}
+
+return true;
+
+}
+    return true;
+
+}
+}
+void MachineSimulator::applyTransition(MachineConfiguration& config, const Transition& transition, char blankSymbol) {
+    for (size_t i = 0; i < config.tapes.size(); ++i) {
+        Tape& tape = config.tapes[i];
+
+        char newSymbol = transition.newSymbols[i];
+
+        if (newSymbol != '*') {
+
+            tape.cells[tape.headPosition] = newSymbol;
+
+        }
+
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        int headPos = tape.headPosition;
+
+        char newSymbol = transition.newSymbols[i];
+
+        if (newSymbol != '*') {
+
+            tape.cells[headPos] = newSymbol;
+
+        }
+
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        char writeSymbol = transition.newSymbols[i];
+
+        if (writeSymbol != '*') {
+
+            tape.cells[headPos] = writeSymbol;
+
+        }
+
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        if (writeSymbol != '*') {
+
+            tape.cells[headPos] = writeSymbol;
+
+        }
+
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+            tape.cells[headPos] = writeSymbol;
+
+        }
+
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        }
+
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        Direction direction = transition.directions[i];
+
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        if (direction == Direction::LEFT) {
+
+            tape.headPosition--;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition++;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+            tape.headPosition = headPos - 1;
+
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition = headPos + 1;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition = headPos + 1;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+            tape.headPosition = headPos + 1;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        } else if (direction == Direction::RIGHT) {
+
+            tape.headPosition = headPos + 1;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+            tape.headPosition = headPos;
+
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+        }
+
+    }
+
+    config.currentState = transition.newState;
+
+}
+    }
+
+    config.currentState = transition.newState;
+
+}
+    config.currentState = transition.newState;
+
+}
+}
+#include "TMParser.h"
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <cctype>
+#include <algorithm>
+TuringMachine TMParser::Parse(const std::string& filePath) {
+    std::ifstream file(filePath);
+    TuringMachine tm;
+    tm.transitions = std::vector<Transition>();
+    std::string line;
+
+    while (std::getline(file, line)) {
+        std::string trimmed = line;
+
+        trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+
+        trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+
+        if (trimmed.empty() || trimmed[0] == ';') {
+
+            continue;
+
+        }
+
+        size_t colonPos = trimmed.find(':');
+
+        if (colonPos == std::string::npos) {
+
+            throw std::runtime_error("Invalid line format: " + line);
+
+        }
+
+        std::string key = trimmed.substr(0, colonPos);
+
+        std::string value = trimmed.substr(colonPos + 1);
+
+        value.erase(0, value.find_first_not_of(" \t"));
+
+        value.erase(value.find_last_not_of(" \t") + 1);
+
+        if (key == "Q") {
+
+            tm.states = parseSet(value, "string");
+
+        } else if (key == "S") {
+
+            tm.inputAlphabet = parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+        if (trimmed.empty() || trimmed[0] == ';') {
+
+            continue;
+
+        }
+
+        size_t colonPos = trimmed.find(':');
+
+        if (colonPos == std::string::npos) {
+
+            throw std::runtime_error("Invalid line format: " + line);
+
+        }
+
+        std::string key = trimmed.substr(0, colonPos);
+
+        std::string value = trimmed.substr(colonPos + 1);
+
+        value.erase(0, value.find_first_not_of(" \t"));
+
+        value.erase(value.find_last_not_of(" \t") + 1);
+
+        if (key == "Q") {
+
+            tm.states = parseSet(value, "string");
+
+        } else if (key == "S") {
+
+            tm.inputAlphabet = parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+            continue;
+
+        }
+
+        size_t colonPos = trimmed.find(':');
+
+        if (colonPos == std::string::npos) {
+
+            throw std::runtime_error("Invalid line format: " + line);
+
+        }
+
+        std::string key = trimmed.substr(0, colonPos);
+
+        std::string value = trimmed.substr(colonPos + 1);
+
+        value.erase(0, value.find_first_not_of(" \t"));
+
+        value.erase(value.find_last_not_of(" \t") + 1);
+
+        if (key == "Q") {
+
+            tm.states = parseSet(value, "string");
+
+        } else if (key == "S") {
+
+            tm.inputAlphabet = parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+        }
+
+        size_t colonPos = trimmed.find(':');
+
+        if (colonPos == std::string::npos) {
+
+            throw std::runtime_error("Invalid line format: " + line);
+
+        }
+
+        std::string key = trimmed.substr(0, colonPos);
+
+        std::string value = trimmed.substr(colonPos + 1);
+
+        value.erase(0, value.find_first_not_of(" \t"));
+
+        value.erase(value.find_last_not_of(" \t") + 1);
+
+        if (key == "Q") {
+
+            tm.states = parseSet(value, "string");
+
+        } else if (key == "S") {
+
+            tm.inputAlphabet = parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+        if (key == "Q") {
+
+            tm.states = parseSet(value, "string");
+
+        } else if (key == "S") {
+
+            tm.inputAlphabet = parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+            tm.states = TMParser::parseSet(value, "string");
+
+        } else if (key == "S") {
+
+            tm.inputAlphabet = TMParser::parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = TMParser::parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = TMParser::parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = TMParser::parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = TMParser::parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = TMParser::parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(TMParser::parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+        } else if (key == "S") {
+
+            tm.inputAlphabet = TMParser::parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = TMParser::parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = TMParser::parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = TMParser::parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = TMParser::parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = TMParser::parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(TMParser::parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}
+            tm.inputAlphabet = TMParser::parseSet(value, "char");
+
+        } else if (key == "G") {
+
+            tm.tapeAlphabet = TMParser::parseSet(value, "char");
+
+        } else if (key == "q0") {
+
+            tm.initialState = TMParser::parseSingle(value);
+
+        } else if (key == "B") {
+
+            tm.blankSymbol = TMParser::parseSingle(value)[0];
+
+        } else if (key == "F") {
+
+            tm.finalStates = TMParser::parseSet(value, "string");
+
+        } else if (key == "N") {
+
+            tm.tapeCount = TMParser::parseInt(value);
+
+        } else if (key[0] == 'q') {
+
+            tm.transitions.push_back(TMParser::parseTransition(trimmed, tm.tapeCount, tm.states, tm.tapeAlphabet));
+
+        }
+
+    }
+
+    return tm;
+
+}

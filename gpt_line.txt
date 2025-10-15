@@ -1,0 +1,64 @@
+@@ FILE: main.cpp
+#include "CLIHandler.h"
+
+int main(int argc, char* argv[]);
+int main(int argc, char* argv[]) {
+    return CLIHandler::Main(argc, argv);
+}
+
+@@ FILE: CLIHandler.cpp
+#include "CLIHandler.h"
+#include "ErrorHandler.h"
+#include "TMParser.h"
+#include "InputValidator.h"
+#include "MachineSimulator.h"
+#include "VerboseTracer.h"
+#include "ResultPrinter.h"
+#include <iostream>
+#include <vector>
+#include <string>
+
+int CLIHandler::Main(int argc, char* argv[]);
+int CLIHandler::Main(int argc, char* argv[]) {
+    bool hasHelpFlag = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-h" || arg == "--help") {
+            hasHelpFlag = true;
+            break;
+        }
+    }
+    if (argc == 1 || hasHelpFlag) {
+        CLIHandler::PrintHelp();
+@@ FILE: main.cpp
+@@ FILE: main.cpp
+#include "CLIHandler.h"
+int main(int argc, char* argv[]);
+int main(int argc, char* argv[]) {
+    return CLIHandler::Main(argc, argv);
+}
+
+@@ FILE: CLIHandler.cpp
+@@ FILE: CLIHandler.cpp
+#include "CLIHandler.h"
+#include "ErrorHandler.h"
+#include "TMParser.h"
+#include "InputValidator.h"
+#include "MachineSimulator.h"
+#include "VerboseTracer.h"
+#include "ResultPrinter.h"
+#include <iostream>
+#include <vector>
+#include <string>
+
+int CLIHandler::Main(int argc, char* argv[]);
+int CLIHandler::Main(int argc, char* argv[]) {
+    bool hasH = false;
+    bool hasHelp = false;
+    for (int i = 0; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-h") hasH = true;
+        if (arg == "--help") hasHelp = true;
+    }
+    if (argc == 1 || hasH || hasHelp) {
+CLIHandler::PrintHelp();
